@@ -1,36 +1,37 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  UseGuards,
+  Req,
+  ParseIntPipe,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { WorkflowStepHistoryService } from './workflow-step-history.service';
-import { CreateWorkflowStepHistoryDto } from './dto/create-workflow-step-history.dto';
-import { UpdateWorkflowStepHistoryDto } from './dto/update-workflow-step-history.dto';
 
-@Controller('workflow-step-history')
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: number;
+    companyId: number;
+  };
+}
+
+@Controller('workflow-history') // Changed endpoint
+@UseGuards(AuthGuard('jwt'))
 export class WorkflowStepHistoryController {
   constructor(
     private readonly workflowStepHistoryService: WorkflowStepHistoryService,
   ) {}
 
-  @Post('create')
-  create(@Body() body: CreateWorkflowStepHistoryDto) {
-    return this.workflowStepHistoryService.create(body);
-  }
+  // Create, Update, Delete endpoints are removed as history should be immutable
+  // and logging is handled internally by other services.
 
-  @Post('find-all')
-  findAll(@Body() body: { companyId: number }) {
-    return this.workflowStepHistoryService.findAll(Number(body.companyId));
-  }
-
-  @Post('find-one')
-  findOne(@Body() body: { id: number }) {
-    return this.workflowStepHistoryService.findOne(Number(body.id));
-  }
-
-  @Post('update')
-  update(@Body() body: { id: number; data: UpdateWorkflowStepHistoryDto }) {
-    return this.workflowStepHistoryService.update(Number(body.id), body.data);
-  }
-
-  @Post('remove')
-  remove(@Body() body: { id: number }) {
-    return this.workflowStepHistoryService.remove(Number(body.id));
+  @Get('instance/:instanceId')
+  findAllForInstance(
+    @Param('instanceId', ParseIntPipe) instanceId: number,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { companyId } = req.user;
+    return this.workflowStepHistoryService.findAllByInstanceId(instanceId, companyId);
   }
 }

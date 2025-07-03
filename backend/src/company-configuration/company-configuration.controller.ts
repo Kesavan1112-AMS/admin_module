@@ -1,54 +1,91 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Req,
+  UseInterceptors, // Added
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { CompanyConfigurationService } from './company-configuration.service';
+import { ApplyBusinessRules } from '../core/decorators/apply-business-rules.decorator'; // Added
+import { BusinessRuleInterceptor } from '../core/interceptors/business-rule.interceptor'; // Added
 import { CreateCompanyConfigurationDto } from './dto/create-company-configuration.dto';
 import { UpdateCompanyConfigurationDto } from './dto/update-company-configuration.dto';
 
-@Controller('company-configuration')
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: number;
+    companyId: number;
+  };
+}
+
+@Controller('company-configurations') // Plural endpoint
+@UseGuards(AuthGuard('jwt'))
 export class CompanyConfigurationController {
-  constructor(private readonly service: CompanyConfigurationService) {}
+  constructor(private readonly configService: CompanyConfigurationService) {}
 
-  @Post('create')
-  create(@Body() body: CreateCompanyConfigurationDto) {
-    return this.service.create(body);
+  @Post()
+  create(
+    @Body() createDto: CreateCompanyConfigurationDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { id: userId, companyId } = req.user;
+    return this.configService.create(createDto, userId, companyId);
   }
 
-  @Post('find-all')
-  findAll(@Body() body: { companyId: number }) {
-    return this.service.findAll(Number(body.companyId));
+  @Get()
+  findAll(@Req() req: AuthenticatedRequest) {
+    const { companyId } = req.user;
+    return this.configService.findAll(companyId);
   }
 
-  @Post('find-one')
-  findOne(@Body() body: { id: number }) {
-    return this.service.findOne(Number(body.id));
+  @Get(':configKey')
+  findOneByKey(
+    @Param('configKey') configKey: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { companyId } = req.user;
+    return this.configService.findOneByKey(configKey, companyId);
   }
 
-  @Post('update')
-  update(@Body() body: { id: number; data: UpdateCompanyConfigurationDto }) {
-    return this.service.update(Number(body.id), body.data);
+  @Patch(':configKey')
+  update(
+    @Param('configKey') configKey: string,
+    @Body() updateDto: UpdateCompanyConfigurationDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { id: userId, companyId } = req.user;
+    return this.configService.update(configKey, updateDto, userId, companyId);
   }
 
-  @Post('remove')
-  remove(@Body() body: { id: number }) {
-    return this.service.remove(Number(body.id));
+  @Delete(':configKey')
+  remove(
+    @Param('configKey') configKey: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { id: userId, companyId } = req.user;
+    return this.configService.remove(configKey, companyId, userId);
   }
 
-  @Post('config')
-  async getConfig(@Body() body: { companyId: number }) {
-    return this.service.getConfig(Number(body.companyId));
+  // Specific endpoint to get the theme, using the refined service method
+  @Get('ui/theme')
+  async getTheme(@Req() req: AuthenticatedRequest) {
+    const { companyId } = req.user;
+    const themeData = await this.configService.getThemeConfig(companyId);
+    return { status: true, msg: 'Theme fetched', data: themeData };
   }
 
-  @Post('menu')
-  async getMenu(@Body() body: { companyId: number }) {
-    return this.service.getMenu(Number(body.companyId));
-  }
-
-  @Post('page')
-  async getPage(@Body() body: { companyId: number; pageName: string }) {
-    return this.service.getPage(Number(body.companyId), body.pageName);
-  }
-
-  @Post('theme')
-  async getTheme(@Body() body: { companyId: number }) {
-    return this.service.getTheme(Number(body.companyId));
-  }
+   // Endpoint for a generic config key, if needed (e.g., 'ui.config')
+   @Get('ui/config/:key')
+   async getSpecificUiConfig(@Param('key') key: string, @Req() req: AuthenticatedRequest) {
+     const { companyId } = req.user;
+     // It's good practice to namespace company-wide UI settings, e.g., 'ui.someSetting'
+     const configData = await this.configService.getSpecificConfig(`ui.${key}`, companyId);
+     return { status: true, msg: `Config ui.${key} fetched`, data: configData };
+   }
 }

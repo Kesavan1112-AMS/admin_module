@@ -1,34 +1,56 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+  Req,
+  ParseIntPipe,
+  DefaultValuePipe,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { AuditLogService } from './audit-log.service';
-import { CreateAuditLogDto } from './dto/create-audit-log.dto';
-import { UpdateAuditLogDto } from './dto/update-audit-log.dto';
+import { FindAllAuditLogsParams } from './audit-log.service'; // Import interface if it's in the service file
 
-@Controller('audit-log')
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: number;
+    companyId: number;
+  };
+}
+
+@Controller('audit-logs') // Plural endpoint
+@UseGuards(AuthGuard('jwt')) // Protected, likely admin only (further role guard needed)
 export class AuditLogController {
-  constructor(private readonly service: AuditLogService) {}
+  constructor(private readonly auditLogService: AuditLogService) {}
 
-  @Post('create')
-  create(@Body() body: CreateAuditLogDto) {
-    return this.service.create(body);
-  }
+  // Create, Update, Delete endpoints are removed as audit logs are created internally
+  // and should be immutable.
 
-  @Post('find-all')
-  findAll(@Body() body: { companyId: number }) {
-    return this.service.findAll(Number(body.companyId));
-  }
+  @Get()
+  async findAll(
+    @Req() req: AuthenticatedRequest,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit?: number,
+    @Query('userId', new ParseIntPipe({ optional: true })) userId?: number,
+    @Query('entityType') entityType?: string,
+    @Query('entityId', new ParseIntPipe({ optional: true })) entityId?: number,
+    @Query('action') action?: string,
+    @Query('startDate') startDate?: string, // Dates will be strings, parse in service or DTO
+    @Query('endDate') endDate?: string,
+  ) {
+    const { companyId } = req.user;
 
-  @Post('find-one')
-  findOne(@Body() body: { id: number }) {
-    return this.service.findOne(Number(body.id));
-  }
-
-  @Post('update')
-  update(@Body() body: { id: number; data: UpdateAuditLogDto }) {
-    return this.service.update(Number(body.id), body.data);
-  }
-
-  @Post('remove')
-  remove(@Body() body: { id: number }) {
-    return this.service.remove(Number(body.id));
+    const params: FindAllAuditLogsParams = {
+      companyId,
+      page,
+      limit,
+      userId,
+      entityType,
+      entityId,
+      action,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+    };
+    return this.auditLogService.findAll(params);
   }
 }

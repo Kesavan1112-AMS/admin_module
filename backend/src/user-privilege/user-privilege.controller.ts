@@ -1,49 +1,81 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Req,
+  Query,
+  ParseIntPipe,
+  UseInterceptors, // Added
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { UserPrivilegeService } from './user-privilege.service';
+import { ApplyBusinessRules } from '../core/decorators/apply-business-rules.decorator'; // Added
+import { BusinessRuleInterceptor } from '../core/interceptors/business-rule.interceptor'; // Added
 import { CreateUserPrivilegeDto } from './dto/create-user-privilege.dto';
 import { UpdateUserPrivilegeDto } from './dto/update-user-privilege.dto';
 
-@Controller('user-privilege')
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: number; // This is the acting user
+    companyId: number;
+  };
+}
+
+@Controller('user-privileges') // Plural endpoint
+@UseGuards(AuthGuard('jwt'))
 export class UserPrivilegeController {
   constructor(private readonly userPrivilegeService: UserPrivilegeService) {}
 
-  @Post('create')
-  create(@Body() body: CreateUserPrivilegeDto) {
-    return this.userPrivilegeService.create(body);
-  }
-
-  @Post('find-all')
-  findAll(
-    @Body() body: { userKey?: string; companyId?: number; status?: string },
+  @Post()
+  create(
+    @Body() createDto: CreateUserPrivilegeDto,
+    @Req() req: AuthenticatedRequest,
   ) {
-    // If companyId is provided, use it directly
-    if (body.companyId) {
-      return this.userPrivilegeService.findAll(body.companyId);
-    }
-
-    // If userKey is provided, we need to find the user's companyId
-    if (body.userKey) {
-      return this.userPrivilegeService.findAllByUserKey(
-        body.userKey,
-        body.status,
-      );
-    }
-
-    throw new Error('Either companyId or userKey must be provided');
+    const { id: actingUserId, companyId } = req.user;
+    // Note: createDto.userId refers to the user to whom the privilege is being assigned
+    return this.userPrivilegeService.create(createDto, actingUserId, companyId);
   }
 
-  @Post('find-one')
-  findOne(@Body() body: { id: number }) {
-    return this.userPrivilegeService.findOne(Number(body.id));
+  @Get()
+  findAll(
+    @Req() req: AuthenticatedRequest,
+    @Query('userId', new ParseIntPipe({ optional: true })) targetUserId?: number, // User whose privileges are listed
+    @Query('privilegeId', new ParseIntPipe({ optional: true })) privilegeId?: number,
+  ) {
+    const { companyId } = req.user;
+    return this.userPrivilegeService.findAll(companyId, targetUserId, privilegeId);
   }
 
-  @Post('update')
-  update(@Body() body: { id: number; data: UpdateUserPrivilegeDto }) {
-    return this.userPrivilegeService.update(Number(body.id), body.data);
+  @Get(':id')
+  findOne(
+    @Param('id', ParseIntPipe) id: number, // ID of the user-privilege mapping record
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { companyId } = req.user;
+    return this.userPrivilegeService.findOne(id, companyId);
   }
 
-  @Post('remove')
-  remove(@Body() body: { id: number }) {
-    return this.userPrivilegeService.remove(Number(body.id));
+  @Patch(':id')
+  update(
+    @Param('id', ParseIntPipe) id: number, // ID of the user-privilege mapping record
+    @Body() updateDto: UpdateUserPrivilegeDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { id: actingUserId, companyId } = req.user;
+    return this.userPrivilegeService.update(id, updateDto, actingUserId, companyId);
+  }
+
+  @Delete(':id')
+  remove(
+    @Param('id', ParseIntPipe) id: number, // ID of the user-privilege mapping record
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { id: actingUserId, companyId } = req.user;
+    return this.userPrivilegeService.remove(id, companyId, actingUserId);
   }
 }

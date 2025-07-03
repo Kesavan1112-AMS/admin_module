@@ -1,97 +1,170 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiEndpoint, Prisma } from '@prisma/client';
+import { CreateApiEndpointDto } from './dto/create-api-endpoint.dto';
+import { UpdateApiEndpointDto } from './dto/update-api-endpoint.dto';
+import { UserPrivilegeService } from '../user-privilege/user-privilege.service'; // Added
+
+interface FindAllApiEndpointsParams {
+  companyId: number;
+  page?: number;
+  limit?: number;
+  status?: string;
+  orderBy?: Prisma.ApiEndpointOrderByWithRelationInput;
+}
 
 @Injectable()
 export class ApiEndpointsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // private rolePrivilegeService: RolePrivilegeService, // Inject if checking privileges
+  ) {}
 
-  async create(data: Prisma.ApiEndpointCreateInput): Promise<ApiEndpoint> {
-    return this.prisma.apiEndpoint.create({
-      data,
-    });
+  private parseJsonStringSafe(jsonString: string | undefined, fieldName: string): Prisma.JsonValue | undefined {
+    if (jsonString === undefined || jsonString === null) return undefined;
+    try {
+      return JSON.parse(jsonString) as Prisma.JsonValue;
+    } catch (error) {
+      throw new BadRequestException(`Invalid JSON format for ${fieldName}.`);
+    }
   }
 
-  async findAll(companyId: number, params: {
-    skip?: number;
-    take?: number;
-    where?: Prisma.ApiEndpointWhereInput;
-    orderBy?: Prisma.ApiEndpointOrderByWithRelationInput;
-  } = {}) {
-    const { skip, take, where, orderBy } = params;
-    return this.prisma.apiEndpoint.findMany({
-      skip,
-      take,
-      where: {
-        ...where,
-        companyId,
-        status: 'A',
-      },
-      orderBy,
+  async create(dto: CreateApiEndpointDto, actingUserId: number, companyId: number): Promise<ApiEndpoint> {
+    if (dto.companyId && dto.companyId !== companyId) {
+      throw new ForbiddenException('CompanyId mismatch for API endpoint creation.');
+    }
+
+    const existing = await this.prisma.apiEndpoint.findUnique({
+        where: { companyId_path_method: { companyId, path: dto.path, method: dto.method }}
     });
+    if (existing && existing.status !== 'D') {
+        throw new ConflictException(`API endpoint with path '${dto.path}' and method '${dto.method}' already exists for this company.`);
+    }
+
+    if (dto.requiredPrivilegeId) {
+      const privilege = await this.prisma.privilegemaster.findFirst({ where: { id: dto.requiredPrivilegeId, companyId }});
+      if (!privilege) {
+        throw new NotFoundException(`RequiredPrivilegeId ${dto.requiredPrivilegeId} not found in this company.`);
+      }
+    }
+
+    const handlerConfigJson = this.parseJsonStringSafe(dto.handlerConfig, 'handlerConfig');
+
+    const dataToCreate: Prisma.ApiEndpointCreateInput = {
+      path: dto.path,
+      method: dto.method,
+      handlerType: dto.handlerType,
+      handlerConfig: handlerConfigJson || Prisma.JsonNull,
+      status: dto.status || 'A',
+      company: { connect: { id: companyId } },
+      createdBy: actingUserId,
+      updatedBy: actingUserId,
+      ...(dto.requiredPrivilegeId && { privilege: { connect: { id: dto.requiredPrivilegeId } } }),
+    };
+    return this.prisma.apiEndpoint.create({ data: dataToCreate });
   }
 
-  async findOne(companyId: number, id: number): Promise<ApiEndpoint | null> {
-    return this.prisma.apiEndpoint.findFirst({
-      where: {
-        id,
-        companyId,
-        status: 'A',
-      },
+  async findAll(params: FindAllApiEndpointsParams) {
+    const { companyId, page = 1, limit = 10, status, orderBy } = params;
+    const whereClause: Prisma.ApiEndpointWhereInput = { companyId };
+    if (status) whereClause.status = status; else whereClause.status = 'A';
+
+    const totalRecords = await this.prisma.apiEndpoint.count({ where: whereClause });
+    const endpoints = await this.prisma.apiEndpoint.findMany({
+      skip: (page - 1) * limit,
+      take: limit,
+      where: whereClause,
+      orderBy: orderBy || { path: 'asc' },
+      include: { privilege: true }
     });
+     return {
+        data: endpoints,
+        totalRecords,
+        currentPage: page,
+        totalPages: Math.ceil(totalRecords / limit),
+    };
+  }
+
+  async findOne(id: number, companyId: number): Promise<ApiEndpoint> {
+    const endpoint = await this.prisma.apiEndpoint.findUnique({ where: { id }, include: { privilege: true } });
+    if (!endpoint || endpoint.companyId !== companyId) {
+      throw new NotFoundException(`API Endpoint with ID ${id} not found in this company.`);
+    }
+    return endpoint;
   }
 
   async findByPathAndMethod(companyId: number, path: string, method: string): Promise<ApiEndpoint | null> {
-    return this.prisma.apiEndpoint.findFirst({
+    return this.prisma.apiEndpoint.findUnique({ // Path+Method+Company is unique
       where: {
-        companyId,
-        path,
-        method,
-        status: 'A',
-      },
+        companyId_path_method: { companyId, path, method },
+        status: 'A' // Only active endpoints can be executed
+    },
+    include: { privilege: true }
     });
   }
 
-  async update(companyId: number, id: number, data: Prisma.ApiEndpointUpdateInput): Promise<ApiEndpoint> {
+  async update(id: number, dto: UpdateApiEndpointDto, actingUserId: number, companyId: number): Promise<ApiEndpoint> {
+    const endpoint = await this.findOne(id, companyId); // Ensures endpoint exists and belongs to company
+
+    if (dto.requiredPrivilegeId && dto.requiredPrivilegeId !== endpoint.requiredPrivilegeId) {
+      const privilege = await this.prisma.privilegemaster.findFirst({ where: { id: dto.requiredPrivilegeId, companyId }});
+      if (!privilege) {
+        throw new NotFoundException(`New RequiredPrivilegeId ${dto.requiredPrivilegeId} not found in this company.`);
+      }
+    }
+
+    const dataToUpdate: Prisma.ApiEndpointUpdateInput = {
+        updatedBy: actingUserId,
+        ...(dto.handlerType && { handlerType: dto.handlerType }),
+        ...(dto.handlerConfig && { handlerConfig: this.parseJsonStringSafe(dto.handlerConfig, 'handlerConfig') || Prisma.JsonNull }),
+        ...(dto.status && { status: dto.status }),
+        ...(dto.requiredPrivilegeId && { privilege: { connect: { id: dto.requiredPrivilegeId } } }),
+    };
+    if (dto.requiredPrivilegeId === null) { // Explicitly set to null if DTO sends null
+        dataToUpdate.privilege = { disconnect: true };
+    }
+
+
     return this.prisma.apiEndpoint.update({
-      where: {
-        id,
-      },
-      data: {
-        ...data,
-        updatedAt: new Date(),
-      },
+      where: { id },
+      data: dataToUpdate,
     });
   }
 
-  async remove(companyId: number, id: number): Promise<ApiEndpoint> {
+  async remove(id: number, companyId: number, actingUserId: number): Promise<ApiEndpoint> {
+    await this.findOne(id, companyId); // Ensures endpoint exists and belongs to company
     return this.prisma.apiEndpoint.update({
-      where: {
-        id,
-      },
-      data: {
-        status: 'I',
-        updatedAt: new Date(),
-      },
+      where: { id },
+      data: { status: 'D', updatedBy: actingUserId }, // Soft delete
     });
   }
 
-  /**
-   * Execute a dynamic SQL query
-   * @param companyId The company ID for data isolation
-   * @param sqlQuery The SQL query to execute
-   * @param params The parameters to use in the query
-   * @returns The query results
-   */
   async executeSqlQuery(companyId: number, sqlQuery: string, params: Record<string, any>): Promise<any> {
-    // Always include companyId in parameters for security
-    const secureParams = { ...params, companyId };
+    // IMPORTANT: sqlQuery MUST come from trusted storage (handlerConfig), NOT from user input in the request.
+    // Parameters should be named in the query string e.g. @paramName or $paramName (depending on DB & Prisma raw query conventions)
+    // Prisma's $queryRaw and $executeRaw typically use template literals with `${ Prisma.sql`...`}` for safety
+    // or pass parameters as subsequent arguments.
+    // For $queryRawUnsafe, it's critical that `sqlQuery` is fixed and only `params` vary.
+    // For this example, assuming `sqlQuery` is safe and `params` are used as values.
+    // A more robust solution would involve parsing `sqlQuery` for placeholders and mapping `params` carefully.
     
+    // Example: If query is "SELECT * FROM users WHERE companyId = $1 AND id = $2"
+    // Then params should be [companyId, params.someUserId]
+    // The current implementation `...Object.values(secureParams)` might not map correctly if order is not guaranteed
+    // or if the query expects named parameters.
+    // For now, this is a placeholder for a more secure dynamic SQL execution strategy.
+
+    // This is a simplified and potentially UNSAFE example.
+    // Production use would require a much more robust and secure way to handle dynamic SQL.
+    // Consider using a query builder or stored procedures if possible for more complex dynamic needs.
+    const secureParams = { ...params, companyId }; // Ensure companyId is part of the context
+
     try {
-      // Use Prisma's $queryRawUnsafe for dynamic SQL
-      // This is risky but necessary for dynamic endpoints
-      // Ensure the query is properly validated and sanitized before this point
-      const result = await this.prisma.$queryRawUnsafe(sqlQuery, ...Object.values(secureParams));
+      // This is a placeholder. Actual implementation needs careful security review.
+      // For instance, if SQL has placeholders like ?, ?, then values must be in order.
+      // If SQL has named placeholders, a different approach for $queryRawUnsafe may be needed or use $queryRaw.
+      console.warn("Executing potentially unsafe SQL query. Ensure query string is from trusted storage and parameters are sanitized/typed.", sqlQuery, secureParams);
+      const result = await this.prisma.$queryRawUnsafe(sqlQuery, ...Object.values(secureParams).map(val => String(val))); // Example, forcing string conversion
       return result;
     } catch (error) {
       console.error('Error executing SQL query:', error);
@@ -99,36 +172,29 @@ export class ApiEndpointsService {
     }
   }
 
-  /**
-   * Execute a dynamic API endpoint based on its configuration
-   * @param endpoint The API endpoint configuration
-   * @param params The parameters for the endpoint
-   * @param userId The ID of the user making the request
-   * @returns The result of the endpoint execution
-   */
-  async executeEndpoint(endpoint: ApiEndpoint, params: Record<string, any>, userId: number): Promise<any> {
-    const handlerConfig = endpoint.handlerConfig as any;
+  async executeEndpoint(endpoint: ApiEndpoint, params: Record<string, any>, reqUser: {id: number, companyId: number, roles?: string[]}): Promise<any> {
+    // 1. Authorization Check (Placeholder - needs proper RBAC service)
+    if (endpoint.requiredPrivilegeId) {
+        // const userHasPrivilege = await this.rolePrivilegeService.checkUserPrivilege(reqUser.id, endpoint.requiredPrivilegeId, reqUser.companyId);
+        // if (!userHasPrivilege) {
+        //   throw new ForbiddenException('User does not have the required privilege for this endpoint.');
+        // }
+        console.warn(`TODO: Implement privilege check for endpoint ${endpoint.id}, required: ${endpoint.requiredPrivilegeId}`);
+    }
+
+    const handlerConfig = endpoint.handlerConfig as Prisma.JsonObject; // Already parsed JSON
 
     switch (endpoint.handlerType) {
       case 'sql':
-        // For SQL handlers, execute the SQL query
-        if (handlerConfig.query) {
-          return this.executeSqlQuery(endpoint.companyId, handlerConfig.query, { ...params, userId });
+        if (handlerConfig && typeof handlerConfig.query === 'string') {
+          // Pass reqUser for potential use in query params (e.g. @currentUserId)
+          return this.executeSqlQuery(endpoint.companyId, handlerConfig.query, { ...params, currentUserId: reqUser.id });
         }
-        throw new Error('SQL query not defined in handler configuration');
-
+        throw new BadRequestException('SQL query not defined or invalid in handler configuration for SQL endpoint.');
       case 'function':
-        // For function handlers, execute a predefined function
-        // This would typically be implemented in a separate service
-        // For now, we'll throw an error as this requires additional implementation
         throw new Error('Function handlers are not implemented yet');
-
       case 'remote':
-        // For remote handlers, make an HTTP request to another service
-        // This would require an HTTP client to be injected
-        // For now, we'll throw an error as this requires additional implementation
         throw new Error('Remote handlers are not implemented yet');
-
       default:
         throw new Error(`Unsupported handler type: ${endpoint.handlerType}`);
     }

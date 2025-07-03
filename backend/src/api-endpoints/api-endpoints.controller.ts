@@ -1,95 +1,134 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, All, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Req, // Standardized
+  All,
+  HttpException,
+  HttpStatus,
+  Query,
+  ParseIntPipe,
+  DefaultValuePipe
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport'; // Standardized
 import { ApiEndpointsService } from './api-endpoints.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CreateApiEndpointDto } from './dto/create-api-endpoint.dto';
+import { UpdateApiEndpointDto } from './dto/update-api-endpoint.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 
-@ApiTags('api-endpoints')
+interface AuthenticatedRequest extends Request { // Standardized
+  user: {
+    id: number;
+    companyId: number;
+    roles?: string[]; // For privilege checks
+  };
+}
+
+@ApiTags('api-endpoints-management') // For managing endpoint definitions
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
-@Controller('api-endpoints')
-export class ApiEndpointsController {
+@UseGuards(AuthGuard('jwt'))
+@Controller('admin/api-endpoints') // Scoped under admin
+export class ApiEndpointsManagementController { // Renamed for clarity
   constructor(private readonly apiEndpointsService: ApiEndpointsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create a new API endpoint' })
-  @ApiResponse({ status: 201, description: 'The API endpoint has been successfully created.' })
-  create(@Request() req, @Body() createApiEndpointDto: any) {
-    const { company, id } = req.user;
-    return this.apiEndpointsService.create({
-      ...createApiEndpointDto,
-      company: { connect: { id: company } },
-      createdBy: id,
-      updatedBy: id,
-    });
+  @ApiOperation({ summary: 'Create a new API endpoint definition' })
+  @ApiResponse({ status: 201, description: 'The API endpoint definition has been successfully created.' })
+  create(@Req() req: AuthenticatedRequest, @Body() createDto: CreateApiEndpointDto) {
+    const { companyId, id: actingUserId } = req.user;
+    return this.apiEndpointsService.create(createDto, actingUserId, companyId);
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all API endpoints for the company' })
-  @ApiResponse({ status: 200, description: 'List of API endpoints.' })
-  findAll(@Request() req) {
-    const { company } = req.user;
-    return this.apiEndpointsService.findAll(company);
+  @ApiOperation({ summary: 'Get all API endpoint definitions for the company' })
+  @ApiResponse({ status: 200, description: 'List of API endpoint definitions.' })
+  findAll(
+    @Req() req: AuthenticatedRequest,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('status') status?: string,
+    ) {
+    const { companyId } = req.user;
+    return this.apiEndpointsService.findAll({ companyId, page, limit, status });
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get an API endpoint by ID' })
-  @ApiResponse({ status: 200, description: 'The API endpoint.' })
-  @ApiResponse({ status: 404, description: 'API endpoint not found.' })
-  findOne(@Request() req, @Param('id') id: string) {
-    const { company } = req.user;
-    return this.apiEndpointsService.findOne(company, +id);
+  @ApiOperation({ summary: 'Get an API endpoint definition by ID' })
+  @ApiResponse({ status: 200, description: 'The API endpoint definition.' })
+  @ApiResponse({ status: 404, description: 'API endpoint definition not found.' })
+  findOne(@Req() req: AuthenticatedRequest, @Param('id', ParseIntPipe) id: number) {
+    const { companyId } = req.user;
+    return this.apiEndpointsService.findOne(id, companyId);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update an API endpoint' })
-  @ApiResponse({ status: 200, description: 'The API endpoint has been successfully updated.' })
+  @ApiOperation({ summary: 'Update an API endpoint definition' })
+  @ApiResponse({ status: 200, description: 'The API endpoint definition has been successfully updated.' })
   update(
-    @Request() req,
-    @Param('id') id: string,
-    @Body() updateApiEndpointDto: any,
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateDto: UpdateApiEndpointDto,
   ) {
-    const { company, id: userId } = req.user;
-    return this.apiEndpointsService.update(company, +id, {
-      ...updateApiEndpointDto,
-      updatedBy: userId,
-    });
+    const { companyId, id: actingUserId } = req.user;
+    return this.apiEndpointsService.update(id, updateDto, actingUserId, companyId);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete an API endpoint' })
-  @ApiResponse({ status: 200, description: 'The API endpoint has been successfully deleted.' })
-  remove(@Request() req, @Param('id') id: string) {
-    const { company } = req.user;
-    return this.apiEndpointsService.remove(company, +id);
+  @ApiOperation({ summary: 'Delete an API endpoint definition (soft delete)' })
+  @ApiResponse({ status: 200, description: 'The API endpoint definition has been successfully deactivated.' })
+  remove(@Req() req: AuthenticatedRequest, @Param('id', ParseIntPipe) id: number) {
+    const { companyId, id: actingUserId } = req.user;
+    return this.apiEndpointsService.remove(id, companyId, actingUserId);
   }
+}
 
-  @All('execute/:path')
-  @ApiOperation({ summary: 'Execute a dynamic API endpoint' })
-  @ApiResponse({ status: 200, description: 'The API endpoint has been successfully executed.' })
-  @ApiResponse({ status: 404, description: 'API endpoint not found.' })
-  async execute(
-    @Request() req,
-    @Param('path') path: string,
-    @Body() body: any,
-  ) {
-    const { company, id: userId } = req.user;
-    const method = req.method;
-    
-    // Find the endpoint configuration
-    const endpoint = await this.apiEndpointsService.findByPathAndMethod(company, path, method);
-    
-    if (!endpoint) {
-      throw new HttpException('API endpoint not found', HttpStatus.NOT_FOUND);
+
+@ApiTags('dynamic-api') // For executing the defined endpoints
+@ApiBearerAuth() // Most dynamic APIs would likely require auth
+@Controller('api/v1/dynamic') // Base path for all dynamic API calls
+export class DynamicApiExecutionController {
+    constructor(private readonly apiEndpointsService: ApiEndpointsService) {}
+
+    @All('*') // Catches all paths under /api/v1/dynamic
+    @UseGuards(AuthGuard('jwt')) // Ensure user is authenticated
+    @ApiOperation({ summary: 'Execute a dynamically defined API endpoint' })
+    @ApiResponse({ status: 200, description: 'API endpoint executed successfully.' })
+    @ApiResponse({ status: 404, description: 'Dynamic API endpoint not found for this path and method.' })
+    @ApiResponse({ status: 403, description: 'User does not have permission for this dynamic API endpoint.'})
+    async execute(
+        @Req() req: AuthenticatedRequest, // Use AuthenticatedRequest
+        @Body() body: any, // Body can be anything
+        @Query() queryParams: any, // Query params can also be anything
+    ) {
+        const { companyId, id: userId, roles } = req.user;
+        const path = req.path.replace('/api/v1/dynamic', ''); // Extract path relative to /dynamic
+        const method = req.method.toUpperCase();
+
+        const endpoint = await this.apiEndpointsService.findByPathAndMethod(companyId, path, method);
+
+        if (!endpoint) {
+            throw new HttpException(`Dynamic API endpoint not found for ${method} ${path}`, HttpStatus.NOT_FOUND);
+        }
+
+        // Combine params from body and query. Body takes precedence.
+        const params = { ...queryParams, ...body };
+
+        try {
+            return await this.apiEndpointsService.executeEndpoint(endpoint, params, {id: userId, companyId, roles});
+        } catch (error) {
+            if (error instanceof ForbiddenException || error instanceof NotFoundException || error instanceof BadRequestException) {
+                throw error;
+            }
+            console.error(`Error executing dynamic endpoint ${path} (${method}):`, error);
+            throw new HttpException(
+                error.message || 'Failed to execute dynamic API endpoint',
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
     }
-    
-    try {
-      // Execute the endpoint with the provided parameters
-      return await this.apiEndpointsService.executeEndpoint(endpoint, body, userId);
-    } catch (error) {
-      throw new HttpException(
-        error.message || 'Failed to execute API endpoint',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
 }

@@ -1,34 +1,77 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Req,
+  ParseIntPipe,
+  UseInterceptors, // Added
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { UserCategoryService } from './user-category.service';
+import { ApplyBusinessRules } from '../core/decorators/apply-business-rules.decorator'; // Added
+import { BusinessRuleInterceptor } from '../core/interceptors/business-rule.interceptor'; // Added
 import { CreateUserCategoryDto } from './dto/create-user-category.dto';
 import { UpdateUserCategoryDto } from './dto/update-user-category.dto';
 
-@Controller('user-category')
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: number;
+    companyId: number;
+    // other properties from JWT payload
+  };
+}
+
+@Controller('user-categories') // Changed to plural form for consistency
+@UseGuards(AuthGuard('jwt'))
 export class UserCategoryController {
   constructor(private readonly userCategoryService: UserCategoryService) {}
 
-  @Post('create')
-  create(@Body() body: CreateUserCategoryDto) {
-    return this.userCategoryService.create(body);
+  @Post()
+  create(
+    @Body() createUserCategoryDto: CreateUserCategoryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { id: userId, companyId } = req.user;
+    // companyId in DTO is ignored by service if already set; service uses companyId from token.
+    return this.userCategoryService.create(createUserCategoryDto, userId, companyId);
   }
 
-  @Post('find-all')
-  findAll(@Body() body: { companyId: number }) {
-    return this.userCategoryService.findAll(Number(body.companyId));
+  @Get()
+  findAll(@Req() req: AuthenticatedRequest) {
+    const { companyId } = req.user;
+    return this.userCategoryService.findAll(companyId);
   }
 
-  @Post('find-one')
-  findOne(@Body() body: { id: number }) {
-    return this.userCategoryService.findOne(Number(body.id));
+  @Get(':id')
+  findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { companyId } = req.user;
+    return this.userCategoryService.findOne(id, companyId);
   }
 
-  @Post('update')
-  update(@Body() body: { id: number; data: UpdateUserCategoryDto }) {
-    return this.userCategoryService.update(Number(body.id), body.data);
+  @Patch(':id')
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateUserCategoryDto: UpdateUserCategoryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { id: userId, companyId } = req.user;
+    return this.userCategoryService.update(id, updateUserCategoryDto, userId, companyId);
   }
 
-  @Post('remove')
-  remove(@Body() body: { id: number }) {
-    return this.userCategoryService.remove(Number(body.id));
+  @Delete(':id')
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const { id: userId, companyId } = req.user;
+    return this.userCategoryService.remove(id, companyId, userId);
   }
 }

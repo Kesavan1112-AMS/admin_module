@@ -2,201 +2,134 @@ import {
   Controller,
   Get,
   Post,
-  Put,
+  Patch, // Changed from Put to Patch for partial updates
   Delete,
   Body,
   Param,
   UseGuards,
-  Request,
+  Req, // Changed from Request to Req for consistency
+  ParseIntPipe,
+  Query,
+  DefaultValuePipe,
+  UseInterceptors, // Added
 } from '@nestjs/common';
 import { CompanyService } from './company.service';
 import { AuthGuard } from '@nestjs/passport';
+import { ApplyBusinessRules } from '../core/decorators/apply-business-rules.decorator'; // Added
+import { BusinessRuleInterceptor } from '../core/interceptors/business-rule.interceptor'; // Added
+import { CreateCompanyDto } from './dto/create-company.dto';
+import { UpdateCompanyDto } from './dto/update-company.dto';
 
-@Controller('company')
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: number;
+    companyId: number; // Admin's companyId
+    // roles?: string[]; // For RBAC, e.g. SUPER_ADMIN
+  };
+}
+
+@Controller('companies') // Plural endpoint
+@UseGuards(AuthGuard('jwt')) // All company operations should be protected
 export class CompanyController {
   constructor(private readonly companyService: CompanyService) {}
 
+  // Typically, only a superadmin or system process can list ALL companies.
+  // Regular admins might only see their own company.
+  // This endpoint implies a superadmin capability.
   @Get()
-  @UseGuards(AuthGuard('jwt'))
-  async findAll() {
-    const companies = await this.companyService.findAll();
+  async findAll(
+    @Req() req: AuthenticatedRequest, // To check for superadmin role if needed
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    // TODO: Add role check here: if (!req.user.roles.includes('SUPER_ADMIN')) throw new ForbiddenException();
+    const result = await this.companyService.findAll(page, limit);
     return {
       status: 1,
       msg: 'Companies retrieved successfully',
-      data: companies,
+      data: result.data,
+      totalRecords: result.totalRecords,
+      currentPage: result.currentPage,
+      totalPages: result.totalPages,
     };
   }
 
+  // Get details of the currently authenticated user's company OR a specific company by ID if superadmin
   @Get(':id')
-  @UseGuards(AuthGuard('jwt'))
-  async findOne(@Param('id') id: string) {
-    const company = await this.companyService.findOne(+id);
-    if (!company) {
-      return {
-        status: 0,
-        msg: 'Company not found',
-        data: [],
-      };
-    }
+  async findOne(@Param('id', ParseIntPipe) id: number, @Req() req: AuthenticatedRequest) {
+     // TODO: Add role check: if admin, id must match req.user.companyId, unless superadmin
+    // if (!req.user.roles.includes('SUPER_ADMIN') && id !== req.user.companyId) {
+    //   throw new ForbiddenException("You can only view your own company's details.");
+    // }
+    const company = await this.companyService.findOne(id);
     return {
       status: 1,
       msg: 'Company retrieved successfully',
+      data: [company], // Keep array format for consistency if frontend expects it
+    };
+  }
+
+  // Get company by code (might be used for public-facing aspects or setup)
+  // This might need different auth or be unprotected depending on use case
+  @Get('by-code/:code')
+  async findByCode(@Param('code') code: string, @Req() req: AuthenticatedRequest) {
+    // Add auth checks as needed. If public, remove UseGuards for this route.
+    // If for admin, ensure they have rights to query arbitrary codes.
+    const company = await this.companyService.findByCode(code);
+    return {
+        status: 1,
+        msg: 'Company retrieved successfully by code',
+        data: [company],
+    };
+  }
+
+
+  // Typically, only a superadmin can create new companies.
+  @Post()
+  async create(@Body() createDto: CreateCompanyDto, @Req() req: AuthenticatedRequest) {
+    // TODO: Add role check here: if (!req.user.roles.includes('SUPER_ADMIN')) throw new ForbiddenException();
+    const actingUserId = req.user.id;
+    const company = await this.companyService.create(createDto, actingUserId);
+    return {
+      status: 1,
+      msg: 'Company created successfully',
       data: [company],
     };
   }
 
-  @Post()
-  @UseGuards(AuthGuard('jwt'))
-  async create(@Body() data: any, @Request() req: any) {
-    try {
-      const company = await this.companyService.create({
-        ...data,
-        createdBy: req.user.id,
-        updatedBy: req.user.id,
-      });
-      return {
-        status: 1,
-        msg: 'Company created successfully',
-        data: [company],
-      };
-    } catch (error) {
-      return {
-        status: 0,
-        msg: error.message || 'Failed to create company',
-        data: [],
-      };
-    }
-  }
-
-  @Put(':id')
-  @UseGuards(AuthGuard('jwt'))
+  // Update a company. Admin updates their own, superadmin can update any.
+  @Patch(':id') // Changed from Put to Patch
   async update(
-    @Param('id') id: string,
-    @Body() data: any,
-    @Request() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateDto: UpdateCompanyDto,
+    @Req() req: AuthenticatedRequest,
   ) {
-    try {
-      const company = await this.companyService.update(+id, {
-        ...data,
-        updatedBy: req.user.id,
-      });
-      return {
-        status: 1,
-        msg: 'Company updated successfully',
-        data: [company],
-      };
-    } catch (error) {
-      return {
-        status: 0,
-        msg: error.message || 'Failed to update company',
-        data: [],
-      };
-    }
+    // TODO: Add role check: if admin, id must match req.user.companyId, unless superadmin
+    // if (!req.user.roles.includes('SUPER_ADMIN') && id !== req.user.companyId) {
+    //   throw new ForbiddenException("You can only update your own company's details.");
+    // }
+    const actingUserId = req.user.id;
+    const company = await this.companyService.update(id, updateDto, actingUserId);
+    return {
+      status: 1,
+      msg: 'Company updated successfully',
+      data: [company],
+    };
   }
 
+  // Soft delete a company. Typically superadmin only.
   @Delete(':id')
-  @UseGuards(AuthGuard('jwt'))
-  async delete(@Param('id') id: string, @Request() req: any) {
-    try {
-      await this.companyService.delete(+id);
-      return {
-        status: 1,
-        msg: 'Company deleted successfully',
-        data: [],
-      };
-    } catch (error) {
-      return {
-        status: 0,
-        msg: error.message || 'Failed to delete company',
-        data: [],
-      };
-    }
-  }
-
-  // Configuration Management Endpoints
-  @Get(':id/config/:configKey')
-  @UseGuards(AuthGuard('jwt'))
-  async getConfiguration(
-    @Param('id') companyId: string,
-    @Param('configKey') configKey: string,
-  ) {
-    const config = await this.companyService.getConfiguration(
-      +companyId,
-      configKey,
-    );
+  async delete(@Param('id', ParseIntPipe) id: number, @Req() req: AuthenticatedRequest) {
+     // TODO: Add role check here: if (!req.user.roles.includes('SUPER_ADMIN')) throw new ForbiddenException();
+    const actingUserId = req.user.id;
+    await this.companyService.delete(id, actingUserId);
     return {
       status: 1,
-      msg: 'Configuration retrieved successfully',
-      data: config ? [config] : [],
+      msg: 'Company deactivated successfully', // Changed message
+      data: [],
     };
   }
 
-  @Post(':id/config/:configKey')
-  @UseGuards(AuthGuard('jwt'))
-  async setConfiguration(
-    @Param('id') companyId: string,
-    @Param('configKey') configKey: string,
-    @Body() data: any,
-    @Request() req: any,
-  ) {
-    try {
-      const config = await this.companyService.setConfiguration(
-        +companyId,
-        configKey,
-        data.configValue,
-        data.description,
-      );
-      return {
-        status: 1,
-        msg: 'Configuration updated successfully',
-        data: [config],
-      };
-    } catch (error) {
-      return {
-        status: 0,
-        msg: error.message || 'Failed to update configuration',
-        data: [],
-      };
-    }
-  }
-
-  // UI Configuration Endpoints
-  @Get(':id/config/menu')
-  @UseGuards(AuthGuard('jwt'))
-  async getMenuConfiguration(@Param('id') companyId: string) {
-    const menu = await this.companyService.getMenuConfiguration(+companyId);
-    return {
-      status: 1,
-      msg: 'Menu configuration retrieved successfully',
-      data: [menu],
-    };
-  }
-
-  @Get(':id/config/theme')
-  @UseGuards(AuthGuard('jwt'))
-  async getThemeConfiguration(@Param('id') companyId: string) {
-    const theme = await this.companyService.getThemeConfiguration(+companyId);
-    return {
-      status: 1,
-      msg: 'Theme configuration retrieved successfully',
-      data: [theme],
-    };
-  }
-
-  @Get(':id/config/page/:pageName')
-  @UseGuards(AuthGuard('jwt'))
-  async getPageConfiguration(
-    @Param('id') companyId: string,
-    @Param('pageName') pageName: string,
-  ) {
-    const pageConfig = await this.companyService.getPageConfiguration(
-      +companyId,
-      pageName,
-    );
-    return {
-      status: 1,
-      msg: 'Page configuration retrieved successfully',
-      data: [pageConfig],
-    };
-  }
+  // Removed configuration management endpoints from here.
+  // They are handled by CompanyConfigurationController and UiConfigController.
 }

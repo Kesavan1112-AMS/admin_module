@@ -1,242 +1,243 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../core/services/prisma.service';
+import { CreateUiMenuDto } from './dto/create-ui-menu.dto';
+import { UpdateUiMenuDto } from './dto/update-ui-menu.dto';
+import { CreateUiPageWithDetailsDto } from './dto/create-ui-page.dto';
+import { UpdateUiPageWithDetailsDto } from './dto/update-ui-page.dto';
+import { Prisma } from '@prisma/client';
+import { BusinessRulesService } from '../business-rules/business-rules.service'; // Added
 
 @Injectable()
 export class UiConfigService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly businessRulesService: BusinessRulesService, // Injected
+    ) {}
 
+  // --- Menu Configuration (Runtime Fetch) ---
   async getMenuConfiguration(companyId: number) {
-    try {
-      const menuItems = await this.prisma.uiMenu.findMany({
-        where: {
-          companyId,
-          status: 'A',
-          parentId: null,
+    // This method remains largely the same, used by frontend to fetch live menu
+    const menuItems = await this.prisma.uiMenu.findMany({
+      where: { companyId, status: 'A', parentId: null },
+      orderBy: { order: 'asc' },
+      include: {
+        children: {
+          where: { status: 'A' },
+          orderBy: { order: 'asc' },
+          include: { children: true } // Recursive fetch if more levels needed, or handle on client
         },
-        orderBy: { order: 'asc' },
-        include: {
-          children: {
-            where: { status: 'A' },
-            orderBy: { order: 'asc' },
-          },
-        },
-      });
-
-      const formatMenu = (items: any[]) =>
-        items.map((item) => ({
-          id: item.id,
-          label: item.label,
-          route: item.route,
-          icon: item.icon,
-          order: item.order,
-          children:
-            item.children && item.children.length > 0
-              ? formatMenu(item.children)
-              : undefined,
-        }));
-
-      return {
-        status: 1,
-        msg: 'Menu configuration retrieved successfully',
-        data: formatMenu(menuItems),
-      };
-    } catch (error) {
-      return {
-        status: 0,
-        msg: 'Failed to retrieve menu configuration',
-        data: [],
-        error: error.message,
-      };
-    }
+      },
+    });
+    // Recursive formatting can be complex, Prisma's include handles nesting.
+    // The service should return data that's easy for the client to use.
+    return menuItems;
   }
 
+  // --- Page Configuration (Runtime Fetch) ---
   async getPageConfiguration(companyId: number, pageKey: string) {
-    try {
-      const page = await this.prisma.uiPage.findFirst({
-        where: {
-          companyId,
-          key: pageKey,
-          status: 'A',
-        },
-        include: {
-          columns: {
-            where: { visible: true },
-            orderBy: { order: 'asc' },
-          },
-          actions: {
-            where: { visible: true },
-            orderBy: { order: 'asc' },
-          },
-          fields: {
-            where: { visible: true },
-            orderBy: { order: 'asc' },
-          },
-        },
-      });
-
-      if (!page) {
-        return {
-          status: 0,
-          msg: 'Page configuration not found',
-          data: null,
-        };
-      }
-
-      return {
-        status: 1,
-        msg: 'Page configuration retrieved successfully',
-        data: {
-          id: page.id,
-          key: page.key,
-          title: page.title,
-          description: page.description,
-          columns: page.columns,
-          actions: page.actions,
-          fields: page.fields,
-        },
-      };
-    } catch (error) {
-      return {
-        status: 0,
-        msg: 'Failed to retrieve page configuration',
-        data: null,
-        error: error.message,
-      };
+    const page = await this.prisma.uiPage.findFirst({
+      where: { companyId, key: pageKey, status: 'A' },
+      include: {
+        columns: { where: { visible: true }, orderBy: { order: 'asc' } },
+        actions: { where: { visible: true }, orderBy: { order: 'asc' } },
+        fields: { where: { visible: true }, orderBy: { order: 'asc' } },
+      },
+    });
+    if (!page) {
+      throw new NotFoundException(`Page configuration with key '${pageKey}' not found.`);
     }
+    return page;
   }
 
+  // --- Theme Configuration (Runtime Fetch) ---
   async getThemeConfiguration(companyId: number) {
-    try {
-      const company = await this.prisma.company.findUnique({
-        where: { id: companyId },
-        select: { themeConfig: true },
-      });
-
-      return {
-        status: 1,
-        msg: 'Theme configuration retrieved successfully',
-        data: company?.themeConfig || this.getDefaultTheme(),
-      };
-    } catch (error) {
-      return {
-        status: 0,
-        msg: 'Failed to retrieve theme configuration',
-        data: this.getDefaultTheme(),
-        error: error.message,
-      };
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { themeConfig: true },
+    });
+    if (!company) {
+        throw new NotFoundException(`Company with ID ${companyId} not found.`);
     }
+    return company.themeConfig || this.getDefaultTheme();
   }
 
-  private getDefaultTheme() {
-    return {
-      primary: '#3B82F6',
-      secondary: '#6B7280',
-      success: '#10B981',
-      warning: '#F59E0B',
-      error: '#EF4444',
-      background: '#FFFFFF',
-      surface: '#F9FAFB',
-      text: '#111827',
-      textSecondary: '#6B7280',
+  private getDefaultTheme() { // This can be moved to a config file or constants
+    return { /* ... default theme properties ... */ };
+  }
+
+  // --- CRUD for UiMenu (Admin Operations) ---
+  async createMenu(dto: CreateUiMenuDto, actingUserId: number, companyId: number) {
+    if (dto.companyId && dto.companyId !== companyId) {
+      throw new ForbiddenException("Cannot create menu for another company.");
+    }
+    if (dto.parentId) {
+      const parentMenu = await this.prisma.uiMenu.findFirst({ where: { id: dto.parentId, companyId }});
+      if (!parentMenu) {
+        throw new NotFoundException(`Parent menu with ID ${dto.parentId} not found in this company.`);
+      }
+    }
+    const dataToCreate = {
+      ...dto,
+      companyId: companyId,
+      status: dto.status || 'A',
+      createdBy: actingUserId,
+      updatedBy: actingUserId,
     };
+    return this.prisma.uiMenu.create({ data: dataToCreate });
   }
 
-  async createMenu(companyId: number, menuData: any) {
-    try {
-      const menu = await this.prisma.uiMenu.create({
+  async findAllMenus(companyId: number) {
+    return this.prisma.uiMenu.findMany({
+        where: { companyId }, // Fetch all statuses for admin view
+        orderBy: [{ parentId: 'asc' }, { order: 'asc' }],
+        include: { children: true }
+    });
+  }
+
+  async findOneMenu(id: number, companyId: number) {
+    const menu = await this.prisma.uiMenu.findUnique({ where: {id}});
+    if(!menu || menu.companyId !== companyId) {
+        throw new NotFoundException(`Menu with ID ${id} not found in this company.`);
+    }
+    return menu;
+  }
+
+  async updateMenu(id: number, dto: UpdateUiMenuDto, actingUserId: number, companyId: number) {
+    const menuToUpdate = await this.findOneMenu(id, companyId); // Ensures it belongs to company
+
+    if (dto.parentId && dto.parentId !== menuToUpdate.parentId) {
+        if (dto.parentId === id) throw new ConflictException("Menu cannot be its own parent.");
+        const parentMenu = await this.prisma.uiMenu.findFirst({ where: { id: dto.parentId, companyId }});
+        if (!parentMenu) {
+          throw new NotFoundException(`New parent menu with ID ${dto.parentId} not found in this company.`);
+        }
+    }
+    const dataToUpdate = { ...dto, updatedBy: actingUserId };
+    return this.prisma.uiMenu.update({ where: { id }, data: dataToUpdate });
+  }
+
+  async deleteMenu(id: number, companyId: number, actingUserId: number) {
+    const menuToDelete = await this.findOneMenu(id, companyId); // Ensures it belongs to company
+    const childrenCount = await this.prisma.uiMenu.count({where: {parentId: id, status: 'A'}});
+    if (childrenCount > 0) {
+        throw new ConflictException("Cannot delete menu with active children. Please delete or re-parent children first.");
+    }
+    return this.prisma.uiMenu.update({ where: { id }, data: { status: 'D', updatedBy: actingUserId } });
+  }
+
+  // --- CRUD for UiPage & Details (Admin Operations) ---
+  async createPageWithDetails(dto: CreateUiPageWithDetailsDto, actingUserId: number, companyId: number) {
+    if (dto.companyId && dto.companyId !== companyId) {
+      throw new ForbiddenException("Cannot create page for another company.");
+    }
+
+    const { columns, actions, fields, ...pageData } = dto;
+
+    return this.prisma.$transaction(async (tx) => {
+      const newPage = await tx.uiPage.create({
         data: {
-          companyId,
-          label: menuData.label,
-          route: menuData.route,
-          icon: menuData.icon,
-          parentId: menuData.parentId,
-          order: menuData.order,
-          status: 'A',
+          ...pageData,
+          companyId: companyId,
+          status: pageData.status || 'A',
+          createdBy: actingUserId,
+          updatedBy: actingUserId,
         },
       });
 
-      return {
-        status: 1,
-        msg: 'Menu created successfully',
-        data: [menu],
-      };
-    } catch (error) {
-      return {
-        status: 0,
-        msg: 'Failed to create menu',
-        data: [],
-        error: error.message,
-      };
-    }
+      if (columns && columns.length > 0) {
+        await tx.uiTableColumn.createMany({
+          data: columns.map(col => ({ ...col, pageId: newPage.id })),
+        });
+      }
+      if (actions && actions.length > 0) {
+        await tx.uiAction.createMany({
+          data: actions.map(act => ({ ...act, pageId: newPage.id })),
+        });
+      }
+      if (fields && fields.length > 0) {
+        await tx.uiField.createMany({
+          data: fields.map(fld => ({
+            ...fld,
+            pageId: newPage.id,
+            validation: fld.validation ? JSON.parse(fld.validation) as Prisma.JsonObject : undefined,
+            options: fld.options ? JSON.parse(fld.options) as Prisma.JsonArray : undefined,
+        })),
+        });
+      }
+      return newPage;
+    });
   }
 
-  async createPage(companyId: number, pageData: any) {
-    try {
-      const page = await this.prisma.uiPage.create({
+  async findAllPages(companyId: number) {
+    return this.prisma.uiPage.findMany({
+        where: { companyId }, // Fetch all statuses for admin view
+        orderBy: { key: 'asc' },
+    });
+  }
+
+  async findOnePage(id: number, companyId: number) {
+    const page = await this.prisma.uiPage.findUnique({
+        where: {id},
+        include: { columns: true, actions: true, fields: true }
+    });
+    if(!page || page.companyId !== companyId) {
+        throw new NotFoundException(`Page with ID ${id} not found in this company.`);
+    }
+    return page;
+  }
+
+  async updatePageWithDetails(id: number, dto: UpdateUiPageWithDetailsDto, actingUserId: number, companyId: number) {
+    const pageToUpdate = await this.findOnePage(id, companyId); // Ensures it belongs to company
+    const { columns, actions, fields, ...pageData } = dto;
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedPage = await tx.uiPage.update({
+        where: { id },
         data: {
-          companyId,
-          key: pageData.key,
-          title: pageData.title,
-          description: pageData.description,
-          status: 'A',
+          ...pageData,
+          updatedBy: actingUserId,
         },
       });
 
-      // Create columns if provided
-      if (pageData.columns && pageData.columns.length > 0) {
-        await this.prisma.uiTableColumn.createMany({
-          data: pageData.columns.map((col: any) => ({
-            pageId: page.id,
-            key: col.key,
-            label: col.label,
-            type: col.type,
-            order: col.order,
-            visible: col.visible !== false,
-            sortable: col.sortable || false,
-          })),
+      // Replace strategy for sub-details
+      if (columns !== undefined) {
+        await tx.uiTableColumn.deleteMany({ where: { pageId: id } });
+        if (columns.length > 0) await tx.uiTableColumn.createMany({ data: columns.map(col => ({ ...col, pageId: id })) });
+      }
+      if (actions !== undefined) {
+        await tx.uiAction.deleteMany({ where: { pageId: id } });
+        if (actions.length > 0) await tx.uiAction.createMany({ data: actions.map(act => ({ ...act, pageId: id })) });
+      }
+      if (fields !== undefined) {
+        await tx.uiField.deleteMany({ where: { pageId: id } });
+        if (fields.length > 0) await tx.uiField.createMany({
+            data: fields.map(fld => ({
+                ...fld,
+                pageId: id,
+                validation: fld.validation ? JSON.parse(fld.validation) as Prisma.JsonObject : undefined,
+                options: fld.options ? JSON.parse(fld.options) as Prisma.JsonArray : undefined,
+            }))
         });
       }
+      return updatedPage; // Or fetch the full page with details again: await this.findOnePage(id, companyId)
+    });
+  }
 
-      // Create actions if provided
-      if (pageData.actions && pageData.actions.length > 0) {
-        await this.prisma.uiAction.createMany({
-          data: pageData.actions.map((action: any) => ({
-            pageId: page.id,
-            key: action.key,
-            label: action.label,
-            order: action.order,
-            visible: action.visible !== false,
-          })),
-        });
-      }
-
-      // Create fields if provided
-      if (pageData.fields && pageData.fields.length > 0) {
-        await this.prisma.uiField.createMany({
-          data: pageData.fields.map((field: any) => ({
-            pageId: page.id,
-            key: field.key,
-            label: field.label,
-            type: field.type,
-            required: field.required || false,
-            visible: field.visible !== false,
-            order: field.order,
-          })),
-        });
-      }
-
-      return {
-        status: 1,
-        msg: 'Page created successfully',
-        data: [page],
-      };
-    } catch (error) {
-      return {
-        status: 0,
-        msg: 'Failed to create page',
-        data: [],
-        error: error.message,
-      };
-    }
+  async deletePage(id: number, companyId: number, actingUserId: number) {
+    await this.findOnePage(id, companyId); // Ensures it belongs to company
+    // Soft delete page and its children (if desired, or hard delete children)
+    // For simplicity, soft-delete only the page. Children might become orphans or need specific handling.
+    // A better approach might be to soft-delete children too, or prevent page deletion if children are critical.
+    return this.prisma.uiPage.update({
+        where: {id},
+        data: { status: 'D', updatedBy: actingUserId }
+    });
+    // If children should also be soft-deleted:
+    // return this.prisma.$transaction(async (tx) => {
+    //   await tx.uiTableColumn.updateMany({ where: { pageId: id }, data: { /* status: 'D' or similar if applicable */ } });
+    //   await tx.uiAction.updateMany({ where: { pageId: id }, data: { /* status: 'D' */ } });
+    //   await tx.uiField.updateMany({ where: { pageId: id }, data: { /* status: 'D' */ } });
+    //   return tx.uiPage.update({ where: {id}, data: { status: 'D', updatedBy: actingUserId }});
+    // });
   }
 }

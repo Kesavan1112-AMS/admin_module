@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { Injectable, Req, Ip } from '@nestjs/common';
+import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import * as bcrypt from 'bcrypt';
-import { Response } from 'express';
+import { Response, Request } from 'express'; // Added Request
 import { ConfigService } from '@nestjs/config';
+import { UserSessionService } from '../user-session/user-session.service'; // Added
+import { v4 as uuidv4 } from 'uuid'; // For JTI
 
 @Injectable()
 export class AuthService {
@@ -11,6 +13,7 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly userSessionService: UserSessionService, // Injected
   ) {}
 
   async validateUser(companyId: number, email: string, pass: string) {
@@ -82,15 +85,20 @@ export class AuthService {
     } = body;
     const passwordHash = await bcrypt.hash(password, 10);
     // You may want to add validation and error handling here
-    return this.userService.createUser({
+    // The companyId for registration would typically be a specific "public registration" company
+    // or determined by some other logic (e.g. invitation, subdomain).
+    // For now, assuming companyId is provided in the body, which might be for a specific tenant's self-registration portal.
+    return this.userService.internalCreateUser({ // Changed to internalCreateUser
       username,
-      passwordHash,
+      password, // Pass raw password, DTO expects it, service will handle hashing if CreateUserDto is used directly by internalCreateUser
+      passwordHash, // Pass hash directly
       email,
       firstName,
       lastName,
-      companyId,
-      userCategoryId,
+      companyId, // Must be validated upstream or part of a specific registration flow
+      userCategoryId, // Must be a default/public registration category for that company
       status: 'A',
+      // createdBy/updatedBy will be self-assigned by internalCreateUser if not provided
     });
   }
 }

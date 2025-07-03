@@ -23,4 +23,12 @@ export class CreateMasterDataDto {
 
   @IsOptional()
   metadata?: any;
+
+  @IsOptional()
+  @IsInt()
+  createdBy?: number;
+
+  @IsOptional()
+  @IsInt()
+  updatedBy?: number;
 }
