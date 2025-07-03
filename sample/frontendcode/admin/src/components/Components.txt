@@ -1,0 +1,7 @@
+Shadcn components used 
+
+1.Card
+2.Button
+3.Input
+4.Label 
+5.

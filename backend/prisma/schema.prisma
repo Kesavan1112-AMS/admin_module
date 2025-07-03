@@ -1,0 +1,572 @@
+generator client {
+  provider = "prisma-client-js"
+  seed     = "ts-node prisma/seed.ts"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id                      Int                       @id @default(autoincrement())
+  name                    String
+  code                    String                    @unique
+  logoUrl                 String?                   @map("logo_url")
+  themeConfig             Json?                     @map("theme_config")
+  status                  String                    @default("A") @db.VarChar(20)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  createdBy               Int?
+  updatedBy               Int?
+  auditlogs               auditlogs[]
+  companyconfigurations   companyconfigurations[]
+  masterdata              masterdata[]
+  masterdatarelationships masterdatarelationships[]
+  masterhierarchy         masterhierarchy[]
+  mastertypes             mastertypes[]
+  modules                 Module[]
+  privilegemaster         privilegemaster[]
+  roleprivileges          roleprivileges[]
+  usercategories          usercategories[]
+  usermastermappings      usermastermappings[]
+  userprivileges          userprivileges[]
+  users                   User[]
+  workflowinstances       workflowinstances[]
+  workflowsteps           workflowsteps[]
+  uiMenus                 UiMenu[]
+  uiPages                 UiPage[]
+  dynamicForms            DynamicForm[]
+  dynamicFormFields       DynamicFormField[]
+  businessRules           BusinessRule[]
+  apiEndpoints            ApiEndpoint[]
+
+  @@map("companies")
+}
+
+model User {
+  id                                                     Int                   @id @default(autoincrement())
+  companyId                                              Int
+  username                                               String
+  email                                                  String
+  passwordHash                                           String
+  firstName                                              String
+  lastName                                               String
+  phone                                                  String?
+  userCategoryId                                         Int
+  status                                                 String                @default("A") @db.VarChar(20)
+  lastLogin                                              DateTime?
+  passwordChangedAt                                      DateTime              @default(now())
+  createdAt                                              DateTime              @default(now())
+  updatedAt                                              DateTime              @updatedAt
+  createdBy                                              Int?
+  updatedBy                                              Int?
+  auditlogs                                              auditlogs[]
+  roleprivileges                                         roleprivileges[]
+  usermastermappings_usermastermappings_grantedByTousers usermastermappings[]  @relation("usermastermappings_grantedByTousers")
+  usermastermappings_usermastermappings_userIdTousers    usermastermappings[]  @relation("usermastermappings_userIdTousers")
+  userprivileges_userprivileges_grantedByTousers         userprivileges[]      @relation("userprivileges_grantedByTousers")
+  userprivileges_userprivileges_userIdTousers            userprivileges[]      @relation("userprivileges_userIdTousers")
+  company                                                Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userCategory                                           usercategories        @relation(fields: [userCategoryId], references: [id])
+  usersessions                                           usersessions[]
+  workflowstephistory                                    workflowstephistory[]
+
+  @@unique([companyId, username])
+  @@unique([companyId, email])
+  @@index([companyId, userCategoryId])
+  @@index([companyId, status])
+  @@index([userCategoryId], map: "users_userCategoryId_fkey")
+  @@map("users")
+}
+
+model Module {
+  id              Int               @id @default(autoincrement())
+  companyId       Int
+  name            String
+  displayName     String
+  description     String?
+  moduleGroup     String?
+  status          String            @default("A") @db.VarChar(20)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  createdBy       Int?
+  updatedBy       Int?
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  privilegemaster privilegemaster[]
+
+  @@unique([companyId, name])
+  @@map("modules")
+}
+
+model auditlogs {
+  id         Int      @id @default(autoincrement())
+  companyId  Int
+  userId     Int
+  entityType String
+  entityId   Int
+  action     String
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  companies  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "auditLogs_companyId_fkey")
+  users      User     @relation(fields: [userId], references: [id], map: "auditLogs_userId_fkey")
+
+  @@index([companyId, entityType, createdAt], map: "auditLogs_companyId_entityType_createdAt_idx")
+  @@index([userId], map: "auditLogs_userId_fkey")
+}
+
+model companyconfigurations {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  configKey   String
+  configValue Json?
+  description String?
+  status      String   @default("A") @db.VarChar(20)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  createdBy   Int?
+  updatedBy   Int?
+  companies   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "companyConfigurations_companyId_fkey")
+
+  @@unique([companyId, configKey], map: "companyConfigurations_companyId_configKey_key")
+}
+
+model masterdata {
+  id                                                                             Int                       @id @default(autoincrement())
+  companyId                                                                      Int
+  masterTypeId                                                                   Int
+  name                                                                           String
+  code                                                                           String
+  displayName                                                                    String?
+  description                                                                    String?
+  metadata                                                                       Json?
+  status                                                                         String                    @default("A") @db.VarChar(20)
+  createdAt                                                                      DateTime                  @default(now())
+  updatedAt                                                                      DateTime
+  createdBy                                                                      Int?
+  updatedBy                                                                      Int?
+  companies                                                                      Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "masterData_companyId_fkey")
+  mastertypes                                                                    mastertypes               @relation(fields: [masterTypeId], references: [id], onDelete: Cascade, map: "masterData_masterTypeId_fkey")
+  masterdatarelationships_masterdatarelationships_childMasterDataIdTomasterdata  masterdatarelationships[] @relation("masterdatarelationships_childMasterDataIdTomasterdata")
+  masterdatarelationships_masterdatarelationships_parentMasterDataIdTomasterdata masterdatarelationships[] @relation("masterdatarelationships_parentMasterDataIdTomasterdata")
+  usermastermappings                                                             usermastermappings[]
+
+  @@unique([companyId, masterTypeId, code], map: "masterData_companyId_masterTypeId_code_key")
+  @@index([companyId, masterTypeId], map: "masterData_companyId_masterTypeId_idx")
+  @@index([companyId, status], map: "masterData_companyId_status_idx")
+  @@index([masterTypeId], map: "masterData_masterTypeId_fkey")
+}
+
+model masterdatarelationships {
+  id                                                                Int         @id @default(autoincrement())
+  companyId                                                         Int
+  parentMasterDataId                                                Int?
+  childMasterDataId                                                 Int
+  relationshipType                                                  String?
+  status                                                            String      @default("A") @db.VarChar(20)
+  createdAt                                                         DateTime    @default(now())
+  updatedAt                                                         DateTime
+  createdBy                                                         Int?
+  updatedBy                                                         Int?
+  masterdata_masterdatarelationships_childMasterDataIdTomasterdata  masterdata  @relation("masterdatarelationships_childMasterDataIdTomasterdata", fields: [childMasterDataId], references: [id], onDelete: Cascade, map: "masterDataRelationships_childMasterDataId_fkey")
+  companies                                                         Company     @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "masterDataRelationships_companyId_fkey")
+  masterdata_masterdatarelationships_parentMasterDataIdTomasterdata masterdata? @relation("masterdatarelationships_parentMasterDataIdTomasterdata", fields: [parentMasterDataId], references: [id], onDelete: Cascade, map: "masterDataRelationships_parentMasterDataId_fkey")
+
+  @@unique([parentMasterDataId, childMasterDataId], map: "masterDataRelationships_parentMasterDataId_childMasterDataId_key")
+  @@index([childMasterDataId], map: "masterDataRelationships_childMasterDataId_fkey")
+  @@index([companyId, relationshipType], map: "masterDataRelationships_companyId_relationshipType_idx")
+}
+
+model masterhierarchy {
+  id                                                          Int          @id @default(autoincrement())
+  companyId                                                   Int
+  parentMasterTypeId                                          Int?
+  childMasterTypeId                                           Int
+  relationshipName                                            String?
+  status                                                      String       @default("A") @db.VarChar(20)
+  createdAt                                                   DateTime     @default(now())
+  updatedAt                                                   DateTime
+  createdBy                                                   Int?
+  updatedBy                                                   Int?
+  mastertypes_masterhierarchy_childMasterTypeIdTomastertypes  mastertypes  @relation("masterhierarchy_childMasterTypeIdTomastertypes", fields: [childMasterTypeId], references: [id], onDelete: Cascade, map: "masterHierarchy_childMasterTypeId_fkey")
+  companies                                                   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "masterHierarchy_companyId_fkey")
+  mastertypes_masterhierarchy_parentMasterTypeIdTomastertypes mastertypes? @relation("masterhierarchy_parentMasterTypeIdTomastertypes", fields: [parentMasterTypeId], references: [id], onDelete: Cascade, map: "masterHierarchy_parentMasterTypeId_fkey")
+
+  @@unique([companyId, parentMasterTypeId, childMasterTypeId], map: "masterHierarchy_companyId_parentMasterTypeId_childMasterType_key")
+  @@index([childMasterTypeId], map: "masterHierarchy_childMasterTypeId_fkey")
+  @@index([parentMasterTypeId], map: "masterHierarchy_parentMasterTypeId_fkey")
+}
+
+model mastertypes {
+  id                                                              Int               @id @default(autoincrement())
+  companyId                                                       Int
+  name                                                            String
+  displayName                                                     String
+  description                                                     String?
+  hierarchyLevel                                                  Int
+  status                                                          String            @default("A") @db.VarChar(20)
+  createdAt                                                       DateTime          @default(now())
+  updatedAt                                                       DateTime
+  createdBy                                                       Int?
+  updatedBy                                                       Int?
+  masterdata                                                      masterdata[]
+  masterhierarchy_masterhierarchy_childMasterTypeIdTomastertypes  masterhierarchy[] @relation("masterhierarchy_childMasterTypeIdTomastertypes")
+  masterhierarchy_masterhierarchy_parentMasterTypeIdTomastertypes masterhierarchy[] @relation("masterhierarchy_parentMasterTypeIdTomastertypes")
+  companies                                                       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "masterTypes_companyId_fkey")
+  usercategories                                                  usercategories[]
+  dynamicForms                                                    DynamicForm[]
+
+  @@unique([companyId, name], map: "masterTypes_companyId_name_key")
+  @@index([companyId, hierarchyLevel, status], map: "masterTypes_companyId_hierarchyLevel_status_idx")
+}
+
+model privilegemaster {
+  id             Int              @id @default(autoincrement())
+  companyId      Int
+  moduleId       Int
+  name           String
+  displayName    String
+  description    String?
+  status         String           @default("A") @db.VarChar(20)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime
+  createdBy      Int?
+  updatedBy      Int?
+  companies      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "privilegeMaster_companyId_fkey")
+  modules        Module           @relation(fields: [moduleId], references: [id], onDelete: Cascade, map: "privilegeMaster_moduleId_fkey")
+  roleprivileges roleprivileges[]
+  userprivileges userprivileges[]
+  workflowsteps  workflowsteps[]
+  apiEndpoints   ApiEndpoint[]
+
+  @@unique([moduleId, name], map: "privilegeMaster_moduleId_name_key")
+  @@index([companyId], map: "privilegeMaster_companyId_fkey")
+}
+
+model roleprivileges {
+  id              Int             @id @default(autoincrement())
+  companyId       Int
+  userCategoryId  Int
+  privilegeId     Int
+  status          String          @default("A") @db.VarChar(20)
+  grantedBy       Int?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime
+  createdBy       Int?
+  updatedBy       Int?
+  companies       Company         @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "rolePrivileges_companyId_fkey")
+  users           User?           @relation(fields: [grantedBy], references: [id], map: "rolePrivileges_grantedBy_fkey")
+  privilegemaster privilegemaster @relation(fields: [privilegeId], references: [id], onDelete: Cascade, map: "rolePrivileges_privilegeId_fkey")
+  usercategories  usercategories  @relation(fields: [userCategoryId], references: [id], onDelete: Cascade, map: "rolePrivileges_userCategoryId_fkey")
+
+  @@unique([userCategoryId, privilegeId], map: "rolePrivileges_userCategoryId_privilegeId_key")
+  @@index([companyId], map: "rolePrivileges_companyId_fkey")
+  @@index([grantedBy], map: "rolePrivileges_grantedBy_fkey")
+  @@index([privilegeId], map: "rolePrivileges_privilegeId_fkey")
+}
+
+model usercategories {
+  id             Int              @id @default(autoincrement())
+  companyId      Int
+  name           String
+  displayName    String
+  description    String?
+  hierarchyLevel Int?
+  masterTypeId   Int?
+  accessScope    String           @default("own") @db.VarChar(20)
+  status         String           @default("A") @db.VarChar(20)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime
+  createdBy      Int?
+  updatedBy      Int?
+  roleprivileges roleprivileges[]
+  companies      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "userCategories_companyId_fkey")
+  mastertypes    mastertypes?     @relation(fields: [masterTypeId], references: [id], map: "userCategories_masterTypeId_fkey")
+  users          User[]
+  workflowsteps  workflowsteps[]
+
+  @@unique([companyId, name], map: "userCategories_companyId_name_key")
+  @@index([companyId, status], map: "userCategories_companyId_status_idx")
+  @@index([masterTypeId], map: "userCategories_masterTypeId_fkey")
+}
+
+model usermastermappings {
+  id                                        Int        @id @default(autoincrement())
+  companyId                                 Int
+  userId                                    Int
+  masterDataId                              Int
+  accessType                                String     @default("direct") @db.VarChar(20)
+  grantedBy                                 Int?
+  status                                    String     @default("A") @db.VarChar(20)
+  createdAt                                 DateTime   @default(now())
+  updatedAt                                 DateTime
+  createdBy                                 Int?
+  updatedBy                                 Int?
+  companies                                 Company    @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "userMasterMappings_companyId_fkey")
+  users_usermastermappings_grantedByTousers User?      @relation("usermastermappings_grantedByTousers", fields: [grantedBy], references: [id], map: "userMasterMappings_grantedBy_fkey")
+  masterdata                                masterdata @relation(fields: [masterDataId], references: [id], onDelete: Cascade, map: "userMasterMappings_masterDataId_fkey")
+  users_usermastermappings_userIdTousers    User       @relation("usermastermappings_userIdTousers", fields: [userId], references: [id], onDelete: Cascade, map: "userMasterMappings_userId_fkey")
+
+  @@unique([userId, masterDataId], map: "userMasterMappings_userId_masterDataId_key")
+  @@index([companyId, userId], map: "userMasterMappings_companyId_userId_idx")
+  @@index([grantedBy], map: "userMasterMappings_grantedBy_fkey")
+  @@index([masterDataId], map: "userMasterMappings_masterDataId_fkey")
+}
+
+model userprivileges {
+  id                                    Int             @id @default(autoincrement())
+  companyId                             Int
+  userId                                Int
+  privilegeId                           Int
+  status                                String          @default("A") @db.VarChar(20)
+  overrideReason                        String?
+  grantedBy                             Int?
+  expiresAt                             DateTime?
+  createdAt                             DateTime        @default(now())
+  updatedAt                             DateTime
+  createdBy                             Int?
+  updatedBy                             Int?
+  companies                             Company         @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "userPrivileges_companyId_fkey")
+  users_userprivileges_grantedByTousers User?           @relation("userprivileges_grantedByTousers", fields: [grantedBy], references: [id], map: "userPrivileges_grantedBy_fkey")
+  privilegemaster                       privilegemaster @relation(fields: [privilegeId], references: [id], onDelete: Cascade, map: "userPrivileges_privilegeId_fkey")
+  users_userprivileges_userIdTousers    User            @relation("userprivileges_userIdTousers", fields: [userId], references: [id], onDelete: Cascade, map: "userPrivileges_userId_fkey")
+
+  @@unique([userId, privilegeId], map: "userPrivileges_userId_privilegeId_key")
+  @@index([companyId], map: "userPrivileges_companyId_fkey")
+  @@index([grantedBy], map: "userPrivileges_grantedBy_fkey")
+  @@index([privilegeId], map: "userPrivileges_privilegeId_fkey")
+}
+
+model usersessions {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  token     String
+  ipAddress String?
+  userAgent String?
+  status    String   @default("A") @db.VarChar(20)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  users     User     @relation(fields: [userId], references: [id], onDelete: Cascade, map: "userSessions_userId_fkey")
+
+  @@index([userId, status, expiresAt], map: "userSessions_userId_status_expiresAt_idx")
+}
+
+model workflowinstances {
+  id                  Int                   @id @default(autoincrement())
+  companyId           Int
+  entityType          String
+  entityId            Int
+  currentStepId       Int?
+  status              String                @default("pending") @db.VarChar(20)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  createdBy           Int?
+  updatedBy           Int?
+  companies           Company               @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "workflowInstances_companyId_fkey")
+  workflowsteps       workflowsteps?        @relation(fields: [currentStepId], references: [id], map: "workflowInstances_currentStepId_fkey")
+  workflowstephistory workflowstephistory[]
+
+  @@index([companyId, status], map: "workflowInstances_companyId_status_idx")
+  @@index([currentStepId], map: "workflowInstances_currentStepId_fkey")
+}
+
+model workflowstephistory {
+  id                 Int               @id @default(autoincrement())
+  workflowInstanceId Int
+  stepId             Int
+  actionTaken        String
+  comments           String?
+  actionBy           Int
+  createdAt          DateTime          @default(now())
+  users              User              @relation(fields: [actionBy], references: [id], map: "workflowStepHistory_actionBy_fkey")
+  workflowsteps      workflowsteps     @relation(fields: [stepId], references: [id], onDelete: Cascade, map: "workflowStepHistory_stepId_fkey")
+  workflowinstances  workflowinstances @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade, map: "workflowStepHistory_workflowInstanceId_fkey")
+
+  @@index([actionBy], map: "workflowStepHistory_actionBy_fkey")
+  @@index([stepId], map: "workflowStepHistory_stepId_fkey")
+  @@index([workflowInstanceId], map: "workflowStepHistory_workflowInstanceId_fkey")
+}
+
+model workflowsteps {
+  id                     Int                   @id @default(autoincrement())
+  companyId              Int
+  name                   String
+  description            String?
+  stepOrder              Int
+  requiredUserCategoryId Int?
+  requiredPrivilegeId    Int?
+  status                 String                @default("A") @db.VarChar(20)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime
+  createdBy              Int?
+  updatedBy              Int?
+  workflowinstances      workflowinstances[]
+  workflowstephistory    workflowstephistory[]
+  companies              Company               @relation(fields: [companyId], references: [id], onDelete: Cascade, map: "workflowSteps_companyId_fkey")
+  privilegemaster        privilegemaster?      @relation(fields: [requiredPrivilegeId], references: [id], map: "workflowSteps_requiredPrivilegeId_fkey")
+  usercategories         usercategories?       @relation(fields: [requiredUserCategoryId], references: [id], map: "workflowSteps_requiredUserCategoryId_fkey")
+
+  @@index([companyId, stepOrder], map: "workflowSteps_companyId_stepOrder_idx")
+  @@index([requiredPrivilegeId], map: "workflowSteps_requiredPrivilegeId_fkey")
+  @@index([requiredUserCategoryId], map: "workflowSteps_requiredUserCategoryId_fkey")
+}
+
+model UiMenu {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  label     String
+  route     String?
+  icon      String?
+  parentId  Int?
+  order     Int?
+  status    String   @default("A")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent    UiMenu?  @relation("MenuParent", fields: [parentId], references: [id])
+  children  UiMenu[] @relation("MenuParent")
+}
+
+model UiPage {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  key         String   // e.g. 'company-management'
+  title       String
+  description String?
+  status      String   @default("A")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  columns     UiTableColumn[]
+  actions     UiAction[]
+  fields      UiField[]
+}
+
+model UiTableColumn {
+  id        Int      @id @default(autoincrement())
+  pageId    Int
+  key       String
+  label     String
+  type      String?  // e.g. 'text', 'toggle', etc.
+  order     Int?
+  visible   Boolean  @default(true)
+  sortable  Boolean  @default(false)
+  page      UiPage   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+
+model UiAction {
+  id        Int      @id @default(autoincrement())
+  pageId    Int
+  key       String   // e.g. 'create', 'edit', 'delete', 'export'
+  label     String
+  order     Int?
+  visible   Boolean  @default(true)
+  page      UiPage   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+
+model UiField {
+  id          Int      @id @default(autoincrement())
+  pageId      Int
+  key         String
+  label       String
+  type        String?  // e.g. 'text', 'number', 'select', etc.
+  required    Boolean  @default(false)
+  visible     Boolean  @default(true)
+  order       Int?
+  placeholder String?
+  validation  Json?
+  options     Json?    // For select fields, dropdowns, etc.
+  page        UiPage   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+
+// Dynamic form system to define custom forms for different entities
+model DynamicForm {
+  id          Int               @id @default(autoincrement())
+  companyId   Int
+  name        String
+  description String?
+  entityType  String?           // e.g., 'masterData', 'user', etc.
+  masterTypeId Int?
+  layout      Json?
+  status      String            @default("A")
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  createdBy   Int?
+  updatedBy   Int?
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fields      DynamicFormField[]
+  masterType  mastertypes?      @relation(fields: [masterTypeId], references: [id])
+  
+  @@unique([companyId, name])
+}
+
+// Dynamic form fields
+model DynamicFormField {
+  id          Int         @id @default(autoincrement())
+  formId      Int
+  companyId   Int
+  key         String
+  label       String
+  type        String      // text, number, date, select, etc.
+  defaultValue String?
+  placeholder String?
+  required    Boolean     @default(false)
+  readOnly    Boolean     @default(false)
+  validation  Json?
+  options     Json?
+  orderIndex  Int?
+  status      String      @default("A")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  createdBy   Int?
+  updatedBy   Int?
+  form        DynamicForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@unique([formId, key])
+}
+
+// Business Rules engine for validations, workflows, etc.
+model BusinessRule {
+  id          Int       @id @default(autoincrement())
+  companyId   Int
+  name        String
+  description String?
+  entityType  String    // What entity this rule applies to
+  eventType   String    // create, update, delete, etc.
+  condition   Json      // Condition for rule execution
+  action      Json      // Action to take when condition is met
+  priority    Int       @default(0)  // Higher priority rules execute first
+  status      String    @default("A")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   Int?
+  updatedBy   Int?
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@index([companyId, entityType, eventType, status])
+}
+
+// API endpoint configurations for dynamic backend API endpoints
+model ApiEndpoint {
+  id                Int          @id @default(autoincrement())
+  companyId         Int
+  path              String
+  method            String       // GET, POST, PUT, DELETE
+  handlerType       String       // sql, function, remote, etc.
+  handlerConfig     Json         // Configuration for the handler
+  requiredPrivilegeId Int?
+  status            String       @default("A")
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  createdBy         Int?
+  updatedBy         Int?
+  company           Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  privilege         privilegemaster? @relation(fields: [requiredPrivilegeId], references: [id])
+  
+  @@unique([companyId, path, method])
+}

@@ -1,0 +1,133 @@
+Act as a Most Experienced developer,
+
+I need to create a project which is going to be a admin module let us assume this is going to be an enterprise application, the languages we are going to use for this project is react with vite(TypeScript + swc) using redux with tailwind css and shadcn for the front-end and nest js for the backend, for the database we are going to use mysql, if we are going to use orm, we can go with prisma.
+
+The main objective for this project is to make it customizable, which means it can be given to any customer without changing any part in the coding side - i will create a customer and a admin user for that company and the customer will use this account and decide what the users are going to use this application, how the webpage should look like and the masters with its heirarchy, now i think for this if we create all the logics in the server side(in the db) means we can acheive this and strictly there shouldn't be any hard coding of conditions or data in the code, all the logics should be handled in the tables only.
+
+the current modules and hierarchy we are going to work is below,
+
+region -> cluster -> country -> STL -> ICAM -> distributor -> dsr
+
+these are the masters that we are going to make and this heirarchy change with respective of different companies, so our project should able to handle that
+
+for the users and previleges, this is what we are currently having,
+
+users table
+privilege master
+role privilege
+user privileges
+
+for now these are the user categories we are having as of now,
+
+admin - full access
+global - access to all the regions
+region - access to the respective regions
+cluster - access to the respective clusters
+country - access to the respective countrys
+STL - access based on the respective mapped ICAMS
+ICAMS - access based on the respective mapped distributors
+distributors - access based on the respective mapped dsr
+dsr - access to his data alone
+
+these categories and mapping can change according to the respective companies, so our goal is to make the users to specify what are the masters, user_category, mapping connectivities and heirarchy, for this we need to have a workflow module to inform of how the data is going to be and what are all the masters, users and users connectivity that this project is going to produce and respective modules to add data and mapping and verifing the data
+
+for the login and session we can use jwt verification
+
+<!-- create a queries.sql file which has the db structure which can acheive this goal and flow.drawio file which will explain the connectivity between the tables -->
+
+there are 3 structures for creating the db for this project in the current directory, now analyse each file for pros and cons and create a optimized and best db structure for this project and create a project from scratch with the above information and in this project create a "queries.sql" - to store all the information regarding the mysql db creation to every minut changes in the mysql part and "progress.txt" - to store each and every step that we are doing in this project
+
+this project must follow some basic instructions as given below
+
+these 5 feilds are mandatory for all the tables and the column of the mysql tables should not have snake case-
+
+status, createdBy, updatedBy, createdAt, updatedAt
+
+### Back-End Structure
+
+The back-end, located in `EngineRoom`, is built using **NestJS** and follows a modular structure. Each module (`adminModule` and `analyticsBackend`) adheres to the following structure:
+
+```
+src/
+├── main.ts                 # Application entry point
+├── app.module.ts          # Root module
+├── controllers/           # HTTP request handlers
+├── services/              # Business logic
+├── entities/              # Database models
+├── dto/                   # Data Transfer Objects
+├── interfaces/            # TypeScript interfaces
+├── middleware/            # Custom middleware
+├── guards/                # Authentication/Authorization guards
+└── config/                # Configuration files
+```
+
+### Front-End Structure
+
+The front-end, located in `RenderWorks`, has two separate setups for the Analytics and Admin modules, both built with **React**, **Tailwind CSS**, and **Shadcn** (for the Admin module). Each front-end setup follows this structure:
+
+```
+src/
+├── components/            # Reusable React components
+├── config/                # Configuration files
+│   ├── api.config.ts
+│   └── key.config.ts
+├── hooks/                 # Custom React hooks
+│   ├── useAuth.ts
+├── routes/                # handles the routing and urls for the front-end
+│   ├── ProtectedRoutes.ts
+│   ├── PublicRoutes.ts
+│   ├── Routes.ts
+├── pages/                 # Page components
+│   ├── home/
+│   │   ├── Home.tsx
+│   ├── auth/
+│   │   ├── LoginPage.tsx
+│   └── About/
+├── services/              # API service functions
+│   └── auth.services.ts
+├── props/                 # Prop definitions
+│   └── auth.props.ts
+├── utils/                 # Utility functions
+│   └── validation.utils.ts
+```
+
+## Technologies Used
+
+### Front-End
+
+- **React**: JavaScript library for building user interfaces.
+- **Tailwind CSS**: Utility-first CSS framework for styling.
+- **Shadcn**: Component library used in the Admin module for enhanced UI.
+
+### Back-End
+
+- **NestJS**: Progressive Node.js framework for building scalable server-side applications.
+- **MySQL**: Relational database for structured data storage.
+
+## Naming Conventions
+
+To maintain consistency across the codebase, the following naming conventions are enforced:
+
+- **Snake Case** (`snake_case`):
+  - Used exclusively for:
+    - Request/Response headers
+    - MySQL table names
+    - Environment variables
+    - Api Endpoints
+- **Camel Case** (`camelCase`):
+  - Used for:
+    - Folder names (except for the main `analytical` folders)
+    - Variables
+    - Function parameters
+- **Pascal Case** (`PascalCase`):
+  - Used for:
+    - Class names
+    - Function names
+    - Component names (React)
+    - TypeScript interfaces and types
+
+-- after creating backend
+
+let me rephrase our objective clearly we are aiming to make it customizable, which means it can be given to any customer without changing any part in the coding side - i will create a customer and a admin user for that company and the customer will use this account and decide what the users are going to use this application, how the webpage should look like, the masters with its heirarchy and what are the actions should can be done to a master record and who are all allowed to do these actions, etc, now i think for this if we create all the logics in the server side(in the db) means we can acheive this and strictly there shouldn't be any hard coding of conditions or data in the code, all the logics should be handled in the tables only
+
+now with this in mind analyse the current codebase completely inside out and check whether the existing setup is enough to acheive our goal and do the necessary things to make this project production ready

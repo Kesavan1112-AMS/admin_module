@@ -1,0 +1,168 @@
+-- Customizable Admin Module - Database Schema
+-- Designed for multi-tenancy and dynamic hierarchies.
+-- All business logic and hierarchies are data-driven.
+
+-- ============== CUSTOMER TENANT TABLES ==============
+
+-- Table to store information about each customer/company.
+-- This allows for a multi-tenant architecture.
+CREATE TABLE customers (
+    customer_id INT AUTO_INCREMENT PRIMARY KEY,
+    company_name VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- ============== DYNAMIC MASTER DATA & HIERARCHY TABLES ==============
+
+-- Defines all possible master types for a customer (e.g., 'region', 'country', 'distributor').
+CREATE TABLE masters (
+    master_id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    master_name VARCHAR(100) NOT NULL, -- e.g., 'Region', 'Cluster', 'Country', 'STL', 'ICAM'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+    UNIQUE(customer_id, master_name)
+);
+
+-- Defines the hierarchical relationship between masters for a given customer.
+-- This table allows each customer to define their own unique hierarchy.
+CREATE TABLE master_hierarchy (
+    hierarchy_id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    parent_master_id INT, -- Can be NULL for the top-level master (e.g., 'Region')
+    child_master_id INT NOT NULL,
+    hierarchy_level INT NOT NULL, -- e.g., 1 for Region, 2 for Cluster, etc.
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_master_id) REFERENCES masters(master_id) ON DELETE CASCADE,
+    FOREIGN KEY (child_master_id) REFERENCES masters(master_id) ON DELETE CASCADE,
+    UNIQUE(customer_id, parent_master_id, child_master_id)
+);
+
+
+-- Stores the actual data for each master.
+-- e.g., if a master is 'Country', this table holds 'USA', 'India', etc.
+CREATE TABLE master_data (
+    data_id INT AUTO_INCREMENT PRIMARY KEY,
+    master_id INT NOT NULL,
+    value VARCHAR(255) NOT NULL,
+    parent_data_id INT, -- Links to the parent data record in the hierarchy (e.g., a Cluster's data links to a Region's data)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (master_id) REFERENCES masters(master_id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_data_id) REFERENCES master_data(data_id) ON DELETE CASCADE,
+    UNIQUE(master_id, value)
+);
+
+
+-- ============== USER, ROLE, AND PRIVILEGE TABLES ==============
+
+-- Stores user accounts. Users are linked to a specific customer.
+CREATE TABLE users (
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    username VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL, -- Store hashed passwords only!
+    email VARCHAR(255) UNIQUE NOT NULL,
+    full_name VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+    UNIQUE(customer_id, username)
+);
+
+-- Defines roles within a customer's organization (e.g., 'Admin', 'Regional Manager').
+CREATE TABLE roles (
+    role_id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    role_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+    UNIQUE(customer_id, role_name)
+);
+
+-- Assigns roles to users. A user can have multiple roles.
+CREATE TABLE user_role_mappings (
+    user_role_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    role_id INT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (role_id) REFERENCES roles(role_id) ON DELETE CASCADE,
+    UNIQUE(user_id, role_id)
+);
+
+-- Master list of all possible privileges in the system (e.g., 'CREATE_USER', 'VIEW_REPORTS').
+-- These are generic and not tied to customers initially.
+CREATE TABLE privileges (
+    privilege_id INT AUTO_INCREMENT PRIMARY KEY,
+    privilege_name VARCHAR(100) UNIQUE NOT NULL, -- e.g., 'CREATE', 'READ', 'UPDATE', 'DELETE'
+    description TEXT
+);
+
+-- Links privileges to roles for a specific master.
+-- This table is critical for defining what a role can do with a specific master type.
+-- e.g., 'Regional Manager' role can 'CREATE' and 'READ' data for the 'Cluster' master.
+CREATE TABLE role_privileges (
+    role_privilege_id INT AUTO_INCREMENT PRIMARY KEY,
+    role_id INT NOT NULL,
+    master_id INT NOT NULL, -- The master this privilege applies to (e.g., 'Country' master)
+    privilege_id INT NOT NULL,
+    FOREIGN KEY (role_id) REFERENCES roles(role_id) ON DELETE CASCADE,
+    FOREIGN KEY (master_id) REFERENCES masters(master_id) ON DELETE CASCADE,
+    FOREIGN KEY (privilege_id) REFERENCES privileges(privilege_id) ON DELETE CASCADE,
+    UNIQUE(role_id, master_id, privilege_id)
+);
+
+
+-- Maps a user to a specific piece of master data.
+-- This defines the user's scope. e.g., mapping a 'Regional Manager' user to the 'North America' region data.
+-- This is the table that restricts data visibility for users.
+CREATE TABLE user_data_access (
+    user_data_access_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    data_id INT NOT NULL, -- The specific data record the user has access to (e.g., 'USA' from master_data)
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (data_id) REFERENCES master_data(data_id) ON DELETE CASCADE,
+    UNIQUE(user_id, data_id)
+);
+
+-- ============== WORKFLOW & CONFIGURATION ==============
+
+-- Table to store customer-specific UI configurations or other settings.
+-- Stored as a JSON object for maximum flexibility.
+CREATE TABLE customer_configurations (
+    config_id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    config_name VARCHAR(100) NOT NULL, -- e.g., 'DASHBOARD_LAYOUT', 'THEME_COLOR'
+    config_value JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+    UNIQUE(customer_id, config_name)
+);
+
+-- ============== SAMPLE DATA INSERTION (FOR DEMONSTRATION) ==============
+
+INSERT INTO `privileges` (`privilege_name`, `description`) VALUES
+('CREATE', 'Allows creating new entries.'),
+('READ', 'Allows viewing entries.'),
+('UPDATE', 'Allows editing existing entries.'),
+('DELETE', 'Allows deleting entries.'),
+('APPROVE', 'Allows approving entries in a workflow.');
+
+-- You would then populate the other tables for each customer tenant.
+-- For example, for "Company A", you would:
+-- 1. INSERT into `customers`
+-- 2. INSERT into `masters` for 'region', 'cluster', 'country' etc. for that customer_id
+-- 3. INSERT into `master_hierarchy` to define the relationships between these masters.
+-- 4. INSERT into `roles` like 'Admin', 'Global', 'Region Head' for that customer_id.
+-- 5. INSERT into `users` for that customer_id.
+-- 6. Map users to roles in `user_role_mappings`.
+-- 7. Define permissions in `role_privileges`.
+-- 8. Populate `master_data` with the actual hierarchy data (e.g., 'APAC' -> 'South Asia' -> 'India').
+-- 9. Assign users their data scope in `user_data_access` (e.g., User 'John Doe' is mapped to the 'India' data_id).

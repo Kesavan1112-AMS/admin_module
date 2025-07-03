@@ -1,0 +1,19 @@
+src/
+├── components/
+├── cofig/
+│   ├── api.config.ts
+│   └── key.config.ts
+├── hooks/
+│   ├── useAuth.ts
+├── pages/
+│   ├── home/
+│   │   ├── Home.tsx
+│   ├── auth/
+│   │   ├── LoginPage.tsx
+│   └── About/
+├── services/
+│   └── auth.services.ts
+├── props/
+│   └── auth.props.ts
+├── utils/
+│   └── validation.utils.ts

@@ -1,0 +1,36 @@
+.floating-input {
+  @apply block py-2.5 px-0 w-full text-sm bg-transparent border-0 border-b-2 rounded-none appearance-none outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0;
+}
+
+.floating-input--default {
+  @apply border-gray-300 focus-visible:border-primary rounded;
+}
+
+.floating-input--error {
+  @apply border-red-500 focus-visible:border-red-500;
+}
+
+/* Label Component */
+.floating-label {
+  @apply absolute text-base origin-[0] -translate-y-5 scale-75 top-0 peer-focus:left-0 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-5 transform duration-300;
+}
+
+.floating-label--default {
+  @apply font-normal text-gray-500 peer-focus:text-[#09377C];
+}
+
+.floating-label--error {
+  @apply text-red-500 peer-focus:text-red-500;
+}
+
+.required-indicator {
+  @apply text-red-600;
+}
+
+.login-card {
+  @apply shadow-md rounded-3xl h-auto max-w-sm flex flex-col justify-around bg-white pt-4;
+}
+
+.show-password-button {
+  @apply absolute inset-y-0 right-4 flex items-center text-gray-600 hover:bg-transparent h-auto w-auto p-0;
+}

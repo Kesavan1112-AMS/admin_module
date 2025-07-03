@@ -1,0 +1,11 @@
+.error-container {
+  @apply text-center mt-8 space-y-4 bg-white w-[100%] h-40;
+}
+.os-windows .error-container {
+  @apply max-h-[280px];
+}
+
+
+ 
+
+

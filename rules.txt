@@ -1,0 +1,17 @@
+# Enterprise Admin Platform - Coding & Architecture Rules
+
+1. All business logic, permissions, hierarchies, and UI definitions must be stored in the database.
+2. No hardcoded business rules, permissions, or UI in backend or frontend code.
+3. All modules, master data, roles, privileges, and workflows are company/tenant scoped.
+4. All API endpoints must use POST and return { status, msg, data }.
+5. All queries and updates must use ID-based lookups (not names).
+6. Multi-tenancy is enforced at all layers (DB, service, controller).
+7. All configuration (menus, layouts, fields, actions, workflows, theme) is stored in companyConfigurations as JSON or in dedicated tables.
+8. Frontend must render all menus, pages, forms, and actions based on backend-provided config.
+9. All validation and field-level rules are defined in backend config and enforced in both backend and frontend.
+10. All modules follow CRUD, DTO, and validation patterns.
+11. Consistent error handling and API responses across all endpoints.
+12. Status fields are used for soft deletes and record state.
+13. Audit logging is enabled for all critical actions.
+14. No direct DB access from frontend; all data flows through backend APIs.
+15. All new features must be data-driven and support per-company customization.

@@ -1,0 +1,75 @@
+CREATE TABLE companies (
+    company_id INT AUTO_INCREMENT PRIMARY KEY,
+    company_name VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE hierarchy_levels (
+    level_id INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT NOT NULL,
+    level_name VARCHAR(255) NOT NULL,
+    level_order INT NOT NULL,
+    FOREIGN KEY (company_id) REFERENCES companies(company_id),
+    UNIQUE (company_id, level_order)
+);
+
+CREATE TABLE master_data (
+    master_id INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT NOT NULL,
+    level_id INT NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    parent_id INT,
+    FOREIGN KEY (company_id) REFERENCES companies(company_id),
+    FOREIGN KEY (level_id) REFERENCES hierarchy_levels(level_id),
+    FOREIGN KEY (parent_id) REFERENCES master_data(master_id)
+);
+
+CREATE TABLE master_hierarchy (
+    ancestor_id INT NOT NULL,
+    descendant_id INT NOT NULL,
+    depth INT NOT NULL,
+    PRIMARY KEY (ancestor_id, descendant_id),
+    FOREIGN KEY (ancestor_id) REFERENCES master_data(master_id),
+    FOREIGN KEY (descendant_id) REFERENCES master_data(master_id)
+);
+
+CREATE TABLE privileges (
+    privilege_id INT AUTO_INCREMENT PRIMARY KEY,
+    privilege_name VARCHAR(255) NOT NULL UNIQUE
+);
+
+CREATE TABLE roles (
+    role_id INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT NOT NULL,
+    role_name VARCHAR(255) NOT NULL,
+    FOREIGN KEY (company_id) REFERENCES companies(company_id),
+    UNIQUE (company_id, role_name)
+);
+
+CREATE TABLE role_privileges (
+    role_id INT NOT NULL,
+    privilege_id INT NOT NULL,
+    PRIMARY KEY (role_id, privilege_id),
+    FOREIGN KEY (role_id) REFERENCES roles(role_id),
+    FOREIGN KEY (privilege_id) REFERENCES privileges(privilege_id)
+);
+
+CREATE TABLE users (
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT NOT NULL,
+    username VARCHAR(255) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    access_type ENUM('all', 'hierarchy') NOT NULL,
+    level_id INT,
+    master_id INT,
+    FOREIGN KEY (company_id) REFERENCES companies(company_id),
+    FOREIGN KEY (level_id) REFERENCES hierarchy_levels(level_id),
+    FOREIGN KEY (master_id) REFERENCES master_data(master_id)
+);
+
+CREATE TABLE user_roles (
+    user_id INT NOT NULL,
+    role_id INT NOT NULL,
+    PRIMARY KEY (user_id, role_id),
+    FOREIGN KEY (user_id) REFERENCES users(user_id),
+    FOREIGN KEY (role_id) REFERENCES roles(role_id)
+);
